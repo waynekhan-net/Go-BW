@@ -1,0 +1,4 @@
+/output/
+/go-bw
+*.o
+*.test
