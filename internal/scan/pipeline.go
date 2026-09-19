@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"image"
 	"log"
+	"path/filepath"
+	"strings"
 
 	"gocv.io/x/gocv"
 )
@@ -23,6 +25,18 @@ const (
 	// of the contour's perimeter. Larger values simplify more
 	// aggressively; smaller values require closer-to-exact quads.
 	approxEpsilonRatio = 0.02
+
+	// minQuadAreaRatio is the minimum area a candidate quad must cover,
+	// as a fraction of the (downscaled) image area, to be accepted as
+	// the document boundary. Without this floor, a real page boundary
+	// that fails to close into a clean contour (e.g. a gap in the Canny
+	// edge map at a torn/folded corner) can be silently passed over in
+	// favor of some tiny unrelated 4-point contour — like a scrap of
+	// body text — that happens to approximate to a quad. Accepting that
+	// produces a nonsense crop instead of triggering the intended
+	// full-frame fallback, so anything this small is treated as if no
+	// quad were found at all.
+	minQuadAreaRatio = 0.20
 
 	// adaptiveThresholdBlockSize and adaptiveThresholdC control the
 	// "scanned" black-and-white look. If output looks blotchy/noisy from
@@ -72,10 +86,26 @@ func ProcessImage(inputPath, outputPath string, opts Options) error {
 	result := toScannedBW(warped)
 	defer result.Close()
 
-	if ok := gocv.IMWrite(outputPath, result); !ok {
+	if ok := writeOutput(outputPath, result); !ok {
 		return fmt.Errorf("failed to write output image")
 	}
 	return nil
+}
+
+// writeOutput writes img to outputPath. For PNG, it writes 1-bit-per-pixel
+// (IMWritePngBilevel) at max deflate compression: result is already a pure
+// 0/255 binary Mat from AdaptiveThreshold, so this is lossless and shrinks
+// the file substantially versus 8-bit-per-pixel PNG or (worse) JPEG, whose
+// DCT quantization adds ringing artifacts around the hard text edges that
+// dominate this content and bloats rather than shrinks the result.
+func writeOutput(outputPath string, img gocv.Mat) bool {
+	if strings.ToLower(filepath.Ext(outputPath)) == ".png" {
+		return gocv.IMWriteWithParams(outputPath, img, []int{
+			gocv.IMWritePngBilevel, 1,
+			gocv.IMWritePngCompression, 9,
+		})
+	}
+	return gocv.IMWrite(outputPath, img)
 }
 
 // detectDocumentQuad locates the largest 4-point contour in img, working on
@@ -116,12 +146,14 @@ func detectDocumentQuad(img gocv.Mat) (quad *[4]image.Point, ratio float64, err 
 	contours := gocv.FindContours(dilated, gocv.RetrievalExternal, gocv.ChainApproxSimple)
 	defer contours.Close()
 
+	minArea := minQuadAreaRatio * float64(resized.Cols()*resized.Rows())
+
 	bestArea := 0.0
 	var best *[4]image.Point
 	for i := 0; i < contours.Size(); i++ {
 		c := contours.At(i)
 		area := gocv.ContourArea(c)
-		if area <= bestArea {
+		if area <= bestArea || area < minArea {
 			continue
 		}
 

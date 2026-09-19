@@ -23,7 +23,7 @@ var supportedExts = map[string]bool{
 func main() {
 	inputDir := flag.String("input", "", "folder of input photos (required)")
 	outputDir := flag.String("output", "", "folder to write scanned output images to (required)")
-	format := flag.String("format", "jpg", "output image format: jpg or png")
+	format := flag.String("format", "png", "output image format: jpg or png (png recommended: the scanned output is binary black/white, which PNG stores losslessly and smaller than JPEG)")
 	verbose := flag.Bool("v", false, "verbose per-file progress/warnings")
 	flag.Parse()
 
