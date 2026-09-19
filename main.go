@@ -56,9 +56,8 @@ func main() {
 
 		ext := strings.ToLower(filepath.Ext(entry.Name()))
 		if !supportedExts[ext] {
-			if *verbose {
-				log.Printf("skipping %s: unsupported file type", entry.Name())
-			}
+			log.Printf("skipping %s: unsupported file type", entry.Name())
+			skipped++
 			continue
 		}
 
